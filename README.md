@@ -1,97 +1,64 @@
-# Paper Implementations
+# paper-implementations
 
-Clean implementations of 20 landmark CV papers: ResNet through DiT, each in its own module
+Clean, tested reimplementations of small building blocks that show up again and again in deep learning papers. The point is not to replace what already ships in PyTorch. The point is to write each block from the equation in the paper, then prove with tests that it behaves the way the paper says it should.
 
-`paper-implementations` `deep-learning` `computer-vision` `pytorch` `research`
+Everything here runs on CPU in about a second. No downloads, no pretrained weights, no GPU.
 
-## Overview
+## What is included
 
-This repository implements a complete pipeline for **paper implementations**, covering
-data preprocessing, model training, evaluation, and deployment.
+**LayerNorm** (Ba, Kiros, Hinton 2016). Normalizes activations over the last few dimensions, then applies a learned scale and shift. Implemented with the biased (population) variance so it lines up with `torch.nn.LayerNorm`.
 
-## Features
+**GELU** (Hendrycks, Gimpel 2016). The Gaussian error linear unit, `x * Phi(x)`. Both the exact `erf` form and the tanh approximation used in the original GPT and BERT code are provided.
 
-- Clean, modular PyTorch implementation
-- Reproducible experiments with MLflow tracking
-- Comprehensive evaluation with standard benchmarks
-- ONNX export for production deployment
-- Detailed documentation and usage examples
+**Label smoothing cross entropy** (Szegedy et al. 2016). Replaces the one hot target with a softened distribution that puts most of the mass on the true class and spreads the rest uniformly. This pulls the model away from overconfident predictions.
 
-## Installation
+**MixUp** (Zhang et al. 2018). Trains on convex combinations of pairs of examples and the matching convex combination of their labels. The mixing coefficient is drawn from a Beta distribution.
 
-```bash
-git clone https://github.com/YOUR_USERNAME/paper-implementations.git
-cd paper-implementations
+**Stochastic depth / drop path** (Huang et al. 2016). During training a whole residual branch is dropped per sample with some probability, and the survivors are scaled up so the expected activation stays put. At evaluation nothing is dropped.
+
+## Layout
+
+```
+src/        the implementations
+tests/      pytest behavior and property checks
+```
+
+## How the tests check correctness
+
+Each test is a behavior check, not a snapshot of numbers I made up:
+
+- LayerNorm output is compared directly against `torch.nn.LayerNorm` on random tensors, including the multi dimensional normalized shape case with randomized affine parameters.
+- GELU is compared against its closed form `0.5 * x * (1 + erf(x / sqrt(2)))` and against `torch.nn.functional.gelu` for both the exact and tanh variants.
+- Label smoothing with smoothing set to zero reduces exactly to cross entropy, and a positive smoothing value raises the loss on a confidently correct prediction. There is also a check against a manually constructed smoothed target.
+- MixUp soft labels stay valid probability distributions that sum to one, mixed inputs land inside the convex hull of the batch, and lambda equal to one recovers the identity.
+- Drop path is the identity at evaluation, drops or scales whole samples during training, and preserves the expected activation thanks to inverted scaling.
+
+## Running
+
+```
 pip install -r requirements.txt
+pytest tests/ -q
 ```
 
-## Quick Start
-
-```python
-from src.model import Model
-from src.trainer import Trainer
-from src.config import Config
-
-config = Config.from_yaml("configs/default.yaml")
-model = Model(config)
-trainer = Trainer(model, config)
-trainer.train()
-```
-
-## Project Structure
-
-```
-paper-implementations/
-├── src/
-│   ├── model.py        # Model architecture
-│   ├── dataset.py      # Data loading and preprocessing
-│   ├── trainer.py      # Training loop
-│   ├── evaluate.py     # Evaluation metrics
-│   └── utils.py        # Helper utilities
-├── configs/
-│   └── default.yaml    # Default configuration
-├── notebooks/
-│   └── exploration.ipynb
-├── tests/
-│   └── test_model.py
-├── requirements.txt
-└── README.md
-```
-
-## Results
-
-| Model | Dataset | Metric | Score |
-|-------|---------|--------|-------|
-| Baseline | Standard | Primary | - |
-| Ours | Standard | Primary | - |
+On my machine this reports 25 passed in about one second on CPU.
 
 ## Usage
 
-```bash
-# Train
-python train.py --config configs/default.yaml
+```python
+import torch
+from src import LayerNorm, gelu, LabelSmoothingCrossEntropy, mixup_batch, DropPath
 
-# Evaluate
-python evaluate.py --checkpoint checkpoints/best.pth
+x = torch.randn(4, 32)
+norm = LayerNorm(32)
+h = gelu(norm(x))
 
-# Export to ONNX
-python export.py --checkpoint checkpoints/best.pth
+logits = torch.randn(4, 10)
+target = torch.randint(0, 10, (4,))
+loss = LabelSmoothingCrossEntropy(smoothing=0.1)(logits, target)
+
+images = torch.randn(4, 3, 8, 8)
+mixed_x, mixed_y, lam = mixup_batch(images, target, alpha=0.2, num_classes=10)
+
+drop = DropPath(drop_prob=0.1)
+y = drop(h)
 ```
-
-## References
-
-- Relevant papers and resources for paper implementations
-
-## License
-
-MIT
-
-# update 1
-
-# update 5
-
-# update 6
-
-# update 10
-
-# update 11
